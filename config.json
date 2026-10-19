@@ -1,12 +1,12 @@
 {
   "port": 3000,
-  "secret": "change-this-to-random-string",
-  "streamKey": "murdoc",
+  "secret": "murdoc-secret-key-2024",
+  "streamKey": "murdoc123",
   "users": [
     {
       "username": "admin",
-      "password": "murdoc",
-      "comment": "Default password is 'password' - CHANGE THIS!"
+      "password": "$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi",
+      "comment": "Password is: password"
     }
   ]
 }
