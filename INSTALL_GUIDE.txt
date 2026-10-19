@@ -1,0 +1,45 @@
+# 📋 INSTALLATION GUIDE
+
+## Step 1: Copy Files to GitHub Folder
+
+Copy these files from `C:\Users\danie\Desktop\ScreenShareUpdate\` to `C:\Users\danie\Documents\GitHub\screenshare-server22\`:
+
+1. Replace `server.js`
+2. Replace `public/share.html`
+3. Add `public/watch.html` (new file)
+
+## Step 2: Push to GitHub
+
+1. Open GitHub Desktop
+2. Select screenshare-server22 repository
+3. Commit changes: "Add phone screen sharing with color selection"
+4. Push to GitHub
+
+## Step 3: Railway Auto-Deploys
+
+Railway will automatically deploy the changes (wait 2-3 minutes)
+
+## Step 4: How to Use
+
+### On Your Phone:
+1. Go to: `https://your-railway-url.railway.app`
+2. Login with username: `admin`
+3. Click "📺 Start Screen Share"
+4. Select which color you're playing (White/Black)
+5. Allow screen sharing permission
+6. Copy the view link
+
+### On Your PC (for chess bot):
+1. Open the view link
+2. You'll see your phone screen
+3. Chess bot can analyze the board
+4. Bot knows which color you're playing
+5. Bot tells you moves via Discord
+
+## Features:
+- ✅ Works on iOS Safari (iOS 15.1+)
+- ✅ Works on Android Chrome
+- ✅ Select White or Black pieces
+- ✅ Real-time streaming
+- ✅ Multiple viewers can watch
+- ✅ No desktop app needed - all web-based!

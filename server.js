@@ -10,20 +10,8 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Load configuration
-const configPath = path.join(__dirname, 'config.json');
-const config = fs.existsSync(configPath)
-  ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
-  : {
-      port: process.env.PORT || 3000,
-      secret: process.env.SESSION_SECRET || 'change-this-secret-key',
-      streamKey: process.env.STREAM_KEY || 'default-stream-key',
-      users: [
-        { username: 'admin' }
-      ]
-    };
+const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -31,44 +19,29 @@ app.use(session({
   secret: config.secret,
   resave: false,
   saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
+  cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 24 * 60 * 60 * 1000 }
 }));
-
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Store active connections
-let streamerSocket = null;
-const viewers = new Set();
+// Store screen share sessions
+const sessions = new Map(); // sessionId -> { presenter: ws, viewers: Set, pieceColor: 'white'|'black' }
 
-// Authentication middleware
 function requireAuth(req, res, next) {
-  if (req.session.authenticated) {
-    next();
-  } else {
-    res.redirect('/login');
-  }
+  if (req.session.authenticated) next();
+  else res.redirect('/login');
 }
 
 // Routes
-app.get('/', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
-});
-
+app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'share.html')));
 app.get('/login', (req, res) => {
-  if (req.session.authenticated) {
-    return res.redirect('/');
-  }
+  if (req.session.authenticated) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
+app.get('/watch/:sessionId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'watch.html')));
 
 app.post('/login', async (req, res) => {
   const { username } = req.body;
-
   const user = config.users.find(u => u.username === username);
-
   if (user) {
     req.session.authenticated = true;
     req.session.username = username;
@@ -84,87 +57,120 @@ app.post('/logout', (req, res) => {
 });
 
 app.get('/api/status', requireAuth, (req, res) => {
-  res.json({
-    streaming: !!streamerSocket,
-    viewers: viewers.size,
-    username: req.session.username
-  });
+  res.json({ username: req.session.username });
+});
+
+app.get('/api/session/:sessionId', (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (session) {
+    res.json({
+      active: !!session.presenter,
+      pieceColor: session.pieceColor || 'white',
+      viewers: session.viewers.size
+    });
+  } else {
+    res.json({ active: false });
+  }
 });
 
 // WebSocket handling
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const type = url.searchParams.get('type');
-  const key = url.searchParams.get('key');
+  const sessionId = url.searchParams.get('session');
 
-  if (type === 'streamer') {
-    // Authenticate streamer
-    if (key !== config.streamKey) {
-      ws.close(1008, 'Invalid stream key');
-      return;
+  if (url.pathname === '/share' && sessionId) {
+    // Presenter (phone sharing screen)
+    if (!sessions.has(sessionId)) {
+      sessions.set(sessionId, { presenter: null, viewers: new Set(), pieceColor: 'white' });
     }
 
-    // Disconnect existing streamer if any
-    if (streamerSocket) {
-      streamerSocket.close();
-    }
+    const session = sessions.get(sessionId);
+    if (session.presenter) session.presenter.close();
 
-    streamerSocket = ws;
-    console.log('Streamer connected');
+    session.presenter = ws;
+    console.log(`📱 Presenter connected: ${sessionId}`);
 
     // Notify all viewers
-    viewers.forEach(viewer => {
-      viewer.send(JSON.stringify({ type: 'streamer-connected' }));
+    session.viewers.forEach(v => {
+      if (v.readyState === WebSocket.OPEN) {
+        v.send(JSON.stringify({ type: 'presenter-connected', pieceColor: session.pieceColor }));
+      }
     });
 
     ws.on('message', (data) => {
-      // Relay frame to all viewers
-      viewers.forEach(viewer => {
-        if (viewer.readyState === WebSocket.OPEN) {
-          viewer.send(data);
+      if (typeof data === 'string') {
+        try {
+          const msg = JSON.parse(data);
+          if (msg.type === 'set_color') {
+            session.pieceColor = msg.color;
+            console.log(`♟️  Session ${sessionId} playing as: ${msg.color}`);
+            // Notify viewers of color change
+            session.viewers.forEach(v => {
+              if (v.readyState === WebSocket.OPEN) {
+                v.send(JSON.stringify({ type: 'color_update', color: msg.color }));
+              }
+            });
+          }
+        } catch (e) {}
+      } else {
+        // Binary frame - relay to all viewers
+        session.viewers.forEach(v => {
+          if (v.readyState === WebSocket.OPEN) {
+            v.send(data);
+          }
+        });
+      }
+    });
+
+    ws.on('close', () => {
+      console.log(`Presenter disconnected: ${sessionId}`);
+      session.presenter = null;
+      session.viewers.forEach(v => {
+        if (v.readyState === WebSocket.OPEN) {
+          v.send(JSON.stringify({ type: 'presenter-disconnected' }));
         }
       });
     });
 
-    ws.on('close', () => {
-      console.log('Streamer disconnected');
-      streamerSocket = null;
+    // Send viewer count updates
+    const interval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'viewer_count',
+          count: session.viewers.size
+        }));
+      } else {
+        clearInterval(interval);
+      }
+    }, 3000);
 
-      // Notify viewers
-      viewers.forEach(viewer => {
-        viewer.send(JSON.stringify({ type: 'streamer-disconnected' }));
-      });
-    });
-
-  } else if (type === 'viewer') {
-    // Viewer connection (authentication checked via cookie)
-    const cookies = req.headers.cookie;
-    if (!cookies || !cookies.includes('connect.sid')) {
-      ws.close(1008, 'Not authenticated');
-      return;
+  } else if (url.pathname === '/watch' && sessionId) {
+    // Viewer (PC/bot watching)
+    if (!sessions.has(sessionId)) {
+      sessions.set(sessionId, { presenter: null, viewers: new Set(), pieceColor: 'white' });
     }
 
-    viewers.add(ws);
-    console.log(`Viewer connected (${viewers.size} total)`);
+    const session = sessions.get(sessionId);
+    session.viewers.add(ws);
+    console.log(`👁️  Viewer connected: ${sessionId} (${session.viewers.size} total)`);
 
     // Send initial status
     ws.send(JSON.stringify({
-      type: streamerSocket ? 'streamer-connected' : 'streamer-disconnected'
+      type: session.presenter ? 'presenter-connected' : 'presenter-disconnected',
+      pieceColor: session.pieceColor
     }));
 
     ws.on('close', () => {
-      viewers.delete(ws);
-      console.log(`Viewer disconnected (${viewers.size} remaining)`);
+      session.viewers.delete(ws);
+      console.log(`Viewer disconnected: ${sessionId} (${session.viewers.size} remaining)`);
     });
   } else {
-    ws.close(1008, 'Invalid connection type');
+    ws.close(1008, 'Invalid connection');
   }
 });
 
-// Start server
-const PORT = config.port;
+const PORT = process.env.PORT || config.port;
 server.listen(PORT, () => {
   console.log(`\n🚀 Screen Share Server running on port ${PORT}`);
-  console.log(`📱 Web interface: http://localhost:${PORT}`);
-  console.log(`🔑 Stream key: ${config.streamKey}\n`);
+  console.log(`📱 Open: http://localhost:${PORT}\n`);
 });
