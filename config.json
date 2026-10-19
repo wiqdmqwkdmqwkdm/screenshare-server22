@@ -1,12 +1,12 @@
 {
   "port": 3000,
-  "secret": "murdoc-secret-key-2024",
+  "secret": "murdoc-secret-2024",
   "streamKey": "murdoc123",
   "users": [
     {
       "username": "admin",
-      "password": "$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi",
-      "comment": "Password is: password"
+      "password": "$2a$10$CwTycUXWue0Thq9StjUM0uJ8qyKHvNfnOLKxKKKxKKKxKKKxKKxKO",
+      "comment": "Password: murdoc"
     }
   ]
 }
