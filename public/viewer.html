@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Screen Share Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+
+        .status.disconnected {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        .status.waiting {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-right {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .user-info {
+            font-size: 13px;
+            color: #aaa;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding-top: 50px;
+        }
+
+        #stream {
+            max-width: 100%;
+            max-height: calc(100vh - 50px);
+            object-fit: contain;
+            display: none;
+        }
+
+        .message {
+            color: #fff;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .message-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .message-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .message-text {
+            font-size: 16px;
+            color: #aaa;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid #fff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .title { font-size: 16px; }
+            .user-info { display: none; }
+            .btn { padding: 6px 12px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <div class="title">🖥️ Screen Share</div>
+            <div class="status waiting" id="status">
+                <div class="status-dot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <span class="user-info" id="userInfo"></span>
+            <button class="btn" onclick="toggleFullscreen()">Fullscreen</button>
+            <button class="btn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="message" class="message">
+            <div class="spinner"></div>
+            <div class="message-title">Waiting for stream...</div>
+            <div class="message-text">Make sure the desktop client is running and connected</div>
+        </div>
+        <canvas id="stream"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('stream');
+        const ctx = canvas.getContext('2d');
+        const message = document.getElementById('message');
+        const status = document.getElementById('status');
+        const statusText = document.getElementById('statusText');
+        const userInfo = document.getElementById('userInfo');
+
+        let ws = null;
+        let reconnectTimeout = null;
+
+        // Get user info
+        fetch('/api/status')
+            .then(r => r.json())
+            .then(data => {
+                userInfo.textContent = `@${data.username}`;
+            });
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}?type=viewer`;
+
+            ws = new WebSocket(wsUrl);
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => {
+                console.log('Connected to server');
+                clearTimeout(reconnectTimeout);
+            };
+
+            ws.onmessage = (event) => {
+                if (typeof event.data === 'string') {
+                    const msg = JSON.parse(event.data);
+
+                    if (msg.type === 'streamer-connected') {
+                        status.classList.remove('waiting', 'disconnected');
+                        statusText.textContent = 'Live';
+                        message.style.display = 'none';
+                        canvas.style.display = 'block';
+                    } else if (msg.type === 'streamer-disconnected') {
+                        status.classList.add('waiting');
+                        status.classList.remove('disconnected');
+                        statusText.textContent = 'Waiting';
+                        message.style.display = 'block';
+                        canvas.style.display = 'none';
+                    }
+                } else {
+                    // Binary frame data
+                    const blob = new Blob([event.data], { type: 'image/jpeg' });
+                    const img = new Image();
+                    img.onload = () => {
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0);
+                    };
+                    img.src = URL.createObjectURL(blob);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('Disconnected from server');
+                status.classList.add('disconnected');
+                status.classList.remove('waiting');
+                statusText.textContent = 'Disconnected';
+
+                // Attempt to reconnect
+                reconnectTimeout = setTimeout(connect, 3000);
+            };
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        async function logout() {
+            await fetch('/logout', { method: 'POST' });
+            window.location.href = '/login';
+        }
+
+        // Prevent sleep on mobile
+        let wakeLock = null;
+        if ('wakeLock' in navigator) {
+            navigator.wakeLock.request('screen').then(lock => {
+                wakeLock = lock;
+            }).catch(() => {});
+        }
+
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>
