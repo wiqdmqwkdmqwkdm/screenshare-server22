@@ -1,7 +1,6 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const path = require('path');
@@ -20,7 +19,7 @@ const config = fs.existsSync(configPath)
       secret: process.env.SESSION_SECRET || 'change-this-secret-key',
       streamKey: process.env.STREAM_KEY || 'default-stream-key',
       users: [
-        { username: 'admin', password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' } // "password"
+        { username: 'admin' }
       ]
     };
 
@@ -66,16 +65,16 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
+  const { username } = req.body;
 
   const user = config.users.find(u => u.username === username);
 
-  if (user && await bcrypt.compare(password, user.password)) {
+  if (user) {
     req.session.authenticated = true;
     req.session.username = username;
     res.json({ success: true });
   } else {
-    res.status(401).json({ success: false, message: 'Invalid credentials' });
+    res.status(401).json({ success: false, message: 'Invalid username' });
   }
 });
 

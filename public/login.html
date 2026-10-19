@@ -129,6 +129,16 @@
             font-size: 12px;
         }
 
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #1565C0;
+        }
+
         @media (max-width: 480px) {
             .login-container {
                 padding: 30px 20px;
@@ -145,7 +155,11 @@
         <div class="logo">
             <div class="logo-icon">🖥️</div>
             <h1>Screen Share Pro</h1>
-            <p class="subtitle">Secure Remote Access</p>
+            <p class="subtitle">Simple Access - Username Only</p>
+        </div>
+
+        <div class="info-box">
+            💡 Just enter username "admin" to access
         </div>
 
         <div id="error" class="error"></div>
@@ -153,12 +167,7 @@
         <form id="loginForm">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autofocus autocomplete="username">
-            </div>
-
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
+                <input type="text" id="username" name="username" required autofocus value="admin">
             </div>
 
             <button type="submit" class="btn" id="loginBtn">
@@ -180,7 +189,6 @@
             e.preventDefault();
 
             const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
 
             errorDiv.classList.remove('show');
             loginBtn.disabled = true;
@@ -192,7 +200,7 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ username })
                 });
 
                 const data = await response.json();
@@ -200,7 +208,7 @@
                 if (data.success) {
                     window.location.href = '/';
                 } else {
-                    errorDiv.textContent = data.message || 'Invalid username or password';
+                    errorDiv.textContent = data.message || 'Invalid username';
                     errorDiv.classList.add('show');
                     loginBtn.disabled = false;
                     loginBtn.textContent = 'Sign In';
