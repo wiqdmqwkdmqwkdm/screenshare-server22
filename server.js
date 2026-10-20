@@ -78,6 +78,17 @@ app.get('/api/session/:sessionId', (req, res) => {
   }
 });
 
+// API to get latest frame as JPEG
+app.get('/api/frame/:sessionId', (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (session && session.latestFrame) {
+    res.set('Content-Type', 'image/jpeg');
+    res.send(session.latestFrame);
+  } else {
+    res.status(404).json({ error: 'No frame available' });
+  }
+});
+
 // WebSocket handling
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -86,7 +97,7 @@ wss.on('connection', (ws, req) => {
   if (url.pathname === '/share' && sessionId) {
     // Presenter (phone sharing screen)
     if (!sessions.has(sessionId)) {
-      sessions.set(sessionId, { presenter: null, viewers: new Set(), pieceColor: 'white' });
+      sessions.set(sessionId, { presenter: null, viewers: new Set(), pieceColor: 'white', latestFrame: null });
     }
 
     const session = sessions.get(sessionId);
@@ -118,7 +129,8 @@ wss.on('connection', (ws, req) => {
           }
         } catch (e) {}
       } else {
-        // Binary frame - relay to all viewers
+        // Binary frame - store latest frame and relay to viewers
+        session.latestFrame = Buffer.from(data);
         session.viewers.forEach(v => {
           if (v.readyState === WebSocket.OPEN) {
             v.send(data);
@@ -152,7 +164,7 @@ wss.on('connection', (ws, req) => {
   } else if (url.pathname === '/watch' && sessionId) {
     // Viewer (PC/bot watching)
     if (!sessions.has(sessionId)) {
-      sessions.set(sessionId, { presenter: null, viewers: new Set(), pieceColor: 'white' });
+      sessions.set(sessionId, { presenter: null, viewers: new Set(), pieceColor: 'white', latestFrame: null });
     }
 
     const session = sessions.get(sessionId);
