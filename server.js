@@ -12,6 +12,7 @@ const wss = new WebSocket.Server({ server });
 
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
+app.set('trust proxy', 1); // Trust Railway proxy
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -19,11 +20,15 @@ app.use(session({
   secret: config.secret,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 24 * 60 * 60 * 1000 }
+  proxy: true,
+  cookie: { 
+    secure: true,
+    httpOnly: true,
+    sameSite: 'none',
+    maxAge: 24 * 60 * 60 * 1000 
+  }
 }));
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Store screen share sessions
 const sessions = new Map(); // sessionId -> { presenter: ws, viewers: Set, pieceColor: 'white'|'black' }
 
 function requireAuth(req, res, next) {
